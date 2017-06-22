@@ -22,14 +22,10 @@ import re
 
 ## Area and year of interest. Naming should follow fellrunner.org.uk convention, 
 ## with no spaces or punctuation. Last four characters should specify year. 
-tag = '2017'
+tag = '2017' ## Currently only 2017 supported
 
 ## Set directory to output .csv file
 outDir = '/Users/allisonradmin/Documents/Programs/raceMap/data/'
-
-## At fellrunnner.org.uk, race ID's start from 1000 and, in 2017, end at 5336
-firstRaceID = '1000'
-lastRaceID  = '5336'
 
 ################################################################################
 
@@ -55,7 +51,7 @@ def scrapePage( raceID ):
 		## Find race name
 		racename = page.find(class_="title_races").get_text()[19:].strip()
 		if racename[-3:] == '(R)': racename = racename[:-4]
-		race['name'] = racename.replace(',','')
+		race['name'] = racename.replace(',',' ')
 
 		## And just read in the rest of the data!
 		for item in details:
@@ -63,7 +59,7 @@ def scrapePage( raceID ):
 			if 'Distance' in text:
 				race['dist']  = text[9:].strip()
 				if race['dist'] != 'Unknown':
-					race['miles'] = float( re.sub('.*/','',race['dist']).strip()[:-1] )
+					race['miles'] = float(re.sub('.*/ ','',race['dist']).strip()[:-1])
 				else:
 					race['miles'] = 0.
 			if 'Climb' in text:
@@ -72,57 +68,61 @@ def scrapePage( raceID ):
 					race['climb'] = int( re.sub('/.*','',race['ascent']).strip()[:-1] )
 				else:
 					race['climb'] = 0
-				print(race['climb'])
+				if race['climb'] < 0: race['climb'] = 0
 			if 'Venue' in text:
-				race['venue'] = text[6:].replace(',', '').replace('.','').replace(' nr ','').replace(' Nr ','').replace(' near ','').strip()
+				race['venue'] = text[6:].replace(', ', ' ').replace(',',' ').replace('. ',' ').replace('.',' ').replace(' nr ',' ').replace(' Nr ',' ').replace(' near ',' ').strip()
+			if 'Country:' in text:
+				race['country'] = text[8:].strip()
+				if race['country'] == 'Northern Ireland': 
+					race['region'] = race['country']
 			if 'Region' in text:
 				race['region'] = text[7:].strip()
-	
-		if ('region' not in race) or (race['region'] == 'Unknown') or (race['dist'] == 'Unknown'):
+		if 'region' in race:
+			if race['country'] != 'England':
+				race['region'] = race['country'] 
+			if race['country'] == 'England - Not FRA':
+				race['region'] = 'Unknown'
+		#if 'region' in race:
+		#	if race['country'] != 'England':
+		#		race['region'] = race['region'] + '(' + race['country'] + ')'
+
+		if ('region' not in race) or (race['region'] == 'Unknown'):# or (race['dist'] == 'Unknown'):
+			print('Region unknown, not adding ' + race['name'] + ' to race list')
 			race = {}
-		#race['dist']   = details[5].get_text()[9:].strip()
-		#race['ascent'] = details[6].get_text()[6:].strip()
-		#race['venue']  = details[7].get_text()[6:].strip()
-		
+			
 	else:	## If not correct year, just return an empty dictionary, which is parsed correctly (i.e. then ignored) by appendRace
 		race = {}	
 	return race	
 
-def appendRace( race, regions, regionTags ):
+def listRace( race ):
 	## race should be dictionary containing race info
 	## This function works out automatically which file to write to based on region.
 	if bool(race):
-		for i, region in enumerate( regions ):
-			if race['region'] == region:
-				print('Processing race: ' + race['name'])
-				with open( outDir + regionTags[i] + tag + '.csv', 'a' ) as f:
-					f.write("%s,%s,%s,%s,%s,%s \n" % (race['date'], race['name'], race['dist'], race['ascent'], race['venue'], race['web']) )
+		print('Processing race: ' + race['name'])
+		with open( outDir + tag + '.csv', 'a' ) as f:
+			f.write("%s,%s,%s,%s,%s,%s,%s,%.1f,%d,%s \n" % (race['date'], race['name'], race['dist'], race['ascent'], race['venue'], race['country'], race['region'], 
+										race['miles'], race['climb'], race['web']) )
 
-def setDataFiles( regionTags ):
-	## overwrite any existing files, insert appropriate headers.
-	for regionTag in regionTags:
-		with open( outDir + regionTag + tag + '.csv', 'w' ) as f:
-			f.write('Date, Race, Distance, Ascent, Venue, Web\n')
-			f.close()
+def setDataFile():
+	## overwrite any existing file, insert appropriate header.
+	with open( outDir + tag + '.csv', 'w' ) as f:
+		f.write('Date, Race, Distance, Ascent, Venue, Country, Region, Miles, Climb, Web\n')
+		f.close()
+def main():
+	## Make relevant file and add header
+	setDataFile()
 
+	## Do the dirty work: trawl the webpages for races in year
+	## defined by user parameter 'tag'. Save these to .csv file readable by google maps.
+	
+	if tag == '2017':
+		firstInd = 4480
+		lastInd  = 5336
+	else:
+		print('Use numbers in makeRaceList.py to efficiently trawl fellrunner.org.uk races, given the year of interest\nExiting...')
+		sys.exit()
+	for i in np.arange( firstInd, lastInd + 1 ):
+		race = scrapePage( str(i) )
+		listRace( race )
 
-def getRegions():
-	## Scrape the region names from the website and process for tags.
-	## Returns list of regions and corresponding tags.
-	page = requests.get( 'http://fellrunner.org.uk/races.php' )
-	page = bs( page.content, 'html.parser' )
-	reg = page.find(id='left-col').find_all(class_='fp_r_list')[4].find_all('li')[2:15]
-	reg = [region.get_text() for region in reg]
-	regTag = [region.replace('/','').replace('.','').replace(' ','') for region in reg] ## Remove spurious punctuation and space for clarity in file name
-	return reg, regTag
-
-## Scrape region names of interest and define corresponding file tag. 
-## Make relevant files and add header
-regions, regionTags = getRegions()
-setDataFiles( regionTags )
-
-## Do the dirty work: trawl the webpages for races in year
-## defined by user parameter 'tag'. Save these to .csv file readable by google maps.
-for i in np.arange( 4700, 5340 ):
-	race = scrapePage( str(i) )
-	appendRace( race, regions, regionTags )
+main()
