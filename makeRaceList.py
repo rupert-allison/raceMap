@@ -14,6 +14,10 @@ from bs4 import BeautifulSoup as bs
 import requests
 import re
 
+from OSGB import *
+from OSTN02 import *
+import transform
+
 ###############################################################################
 ## User parameters: 
 ## May need to adjust 'lastRaceID' for processes a new year of race fixtures 
@@ -70,13 +74,41 @@ def scrapePage( raceID ):
 					race['climb'] = 0
 				if race['climb'] < 0: race['climb'] = 0
 			if 'Venue' in text:
-				race['venue'] = text[6:].replace(', ', ' ').replace(',',' ').replace('. ',' ').replace('.',' ').replace(' nr ',' ').replace(' Nr ',' ').replace(' near ',' ').strip()
+				race['venue'] = text[6:].replace(', ', ' ').replace(',',' ').replace('. ',' ').replace('.',' ').replace(' nr ',' ').replace(' Nr ',' ').replace(' near ',' ').replace('GR','').strip()
+				gr = race['venue'].split(' ')
+				gr = [ x for x in gr if (len(x) == 8 and x[2:].isdigit()) ]
+				if len(gr) == 1: 
+					gr = gr[0]	
+					if gr[2:].isdigit() and (not gr.isdigit()) and (len(gr) in [8,12]): 
+						if len(gr) ==  8: xin, yin = parse_grid(gr[:2], int(gr[2:5]+'00'), int(gr[5:]+'00'))
+						if len(gr) == 12: xin, yin = parse_grid(gr[:2], int(gr[2:7])     , int(gr[7:])     )
+						try:
+							(x,y,h) = OSGB36_to_ETRS89 (xin, yin)
+							(gla, glo) = grid_to_ll(x, y)
+							race['latlong'] = '%.6f %.6f' % (gla, glo)
+							print(race['latlong'])
+							print('GR FROM VENUE: SUCCESS')
+						except:
+							pass
+				
 			if 'Country:' in text:
 				race['country'] = text[8:].strip()
 				if race['country'] == 'Northern Ireland': 
 					race['region'] = race['country']
 			if 'Region' in text:
 				race['region'] = text[7:].strip()
+			if 'Grid ref' in text:
+				gr = text[9:].replace('GR','').replace(' ','').strip()
+				if gr[2:].isdigit() and (not gr.isdigit()) and (len(gr) in [8,12]): 
+					if len(gr) ==  8: xin, yin = parse_grid(gr[:2], int(gr[2:5]+'00'), int(gr[5:]+'00'))
+					if len(gr) == 12: xin, yin = parse_grid(gr[:2], int(gr[2:7])     , int(gr[7:])     )
+					try:
+						(x,y,h) = OSGB36_to_ETRS89 (xin, yin)
+						(gla, glo) = grid_to_ll(x, y)
+						race['latlong'] = '%.6f %.6f' % (gla, glo)
+						print(race['latlong'])
+					except:
+						pass
 		if 'region' in race:
 			if race['country'] != 'England':
 				race['region'] = race['country'] 
@@ -90,7 +122,7 @@ def scrapePage( raceID ):
 			print('Region unknown, not adding ' + race['name'] + ' to race list')
 			race = {}
 			
-	else:	## If not correct year, just return an empty dictionary, which is parsed correctly (i.e. then ignored) by appendRace
+	else:	## If not correct year, just return an empty dictionary, which is parsed correctly (i.e. then ignored) by listRace
 		race = {}	
 	return race	
 
@@ -98,15 +130,19 @@ def listRace( race ):
 	## race should be dictionary containing race info
 	## This function works out automatically which file to write to based on region.
 	if bool(race):
+		if 'latlong' in race:
+			race['gmap'] = race['latlong']
+		else:
+			race['gmap'] = race['venue']
 		print('Processing race: ' + race['name'])
 		with open( outDir + tag + '.csv', 'a' ) as f:
-			f.write("%s,%s,%s,%s,%s,%s,%s,%.1f,%d,%s \n" % (race['date'], race['name'], race['dist'], race['ascent'], race['venue'], race['country'], race['region'], 
-										race['miles'], race['climb'], race['web']) )
+			f.write("%s,%s,%s,%s,%s,%s,%s,%.1f,%d,%s,%s \n" % (race['date'], race['name'], race['dist'], race['ascent'], race['venue'], race['country'], race['region'], 
+										race['miles'], race['climb'], race['gmap'], race['web']) )
 
 def setDataFile():
 	## overwrite any existing file, insert appropriate header.
 	with open( outDir + tag + '.csv', 'w' ) as f:
-		f.write('Date, Race, Distance, Ascent, Venue, Country, Region, Miles, Climb, Web\n')
+		f.write('Date, Race, Distance, Ascent, Venue, Country, Region, Distance (mil), Climb (m), Gmap, Web\n')
 		f.close()
 def main():
 	## Make relevant file and add header
@@ -119,10 +155,11 @@ def main():
 		firstInd = 4480
 		lastInd  = 5336
 	else:
-		print('Use numbers in makeRaceList.py to efficiently trawl fellrunner.org.uk races, given the year of interest\nExiting...')
+		print('Use index numbers in makeRaceList.py to efficiently trawl fellrunner.org.uk races, given the year of interest\nExiting...')
 		sys.exit()
 	for i in np.arange( firstInd, lastInd + 1 ):
 		race = scrapePage( str(i) )
 		listRace( race )
+
 
 main()
