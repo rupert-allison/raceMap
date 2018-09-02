@@ -7,12 +7,26 @@
 ## see here: https://www.crummy.com/software/BeautifulSoup/bs4/doc/
 ## for documentation. I installed with: sudo pip-3.4 install beautifulsoup4
 
+## To do (12th July 2018):
+## - Add Scottish Hill Races from scottishhillracing.co.uk
+## - Add random perturbation to those races at repeat locations for ease of viewing (e.g. Trunce)
+## - **DONE** Prefix each race name with the Date (e.g. 04/06 Trunce 3) such that they come up in date order. 
+## - **DONE** Auto make a JanFeb file and a NovDec file (only 10 layers max allowed).
+## - **DONE** Fix 18/02 Stybarrow Dodd race - Thirlmere address
+
+
+## Manual modifications:
+## Fellside: --> "Fellside Village, Caldbeck"
+## Slieve Donard --> "Newcastle Main Street Northern Ireland"
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
 from bs4 import BeautifulSoup as bs
 import requests
 import re
+import subprocess
 
 from OSGB import *
 from OSTN02 import *
@@ -26,13 +40,54 @@ import transform
 
 ## Area and year of interest. Naming should follow fellrunner.org.uk convention, 
 ## with no spaces or punctuation. Last four characters should specify year. 
-tag = '2017' ## Currently only 2017 supported
+tag = '2018' ## Currently only 2017/2018 supported
 
 ## Set directory to output .csv file
 outDir = '/Users/allisonradmin/Documents/Programs/raceMap/data/'
 
 ################################################################################
 
+def formatDate( date ):
+	## Takes in a string with long format date and outputs day and month as string in format DD/MM
+	date  = date.split()
+	month = date[2]
+	day   = date[1]
+
+	if month == 'Jan': month = '01'
+	if month == 'Feb': month = '02'
+	if month == 'Mar': month = '03'
+	if month == 'Apr': month = '04'
+	if month == 'May': month = '05'
+	if month == 'Jun': month = '06'
+	if month == 'Jul': month = '07'
+	if month == 'Aug': month = '08'
+	if month == 'Sep': month = '09'
+	if month == 'Oct': month = '10'
+	if month == 'Nov': month = '11'
+	if month == 'Dec': month = '12'
+
+	if len(day) == 3: day = '0' + day[:1]
+	if len(day) == 4: day =       day[:2]
+
+	return day+'/'+month+' '
+
+def scrapeSHRpage():
+	## Grab all of this year's races from the SHR website; returns a list of races, each 
+	## element containing a dictionary detailing a given race. 
+
+	races = []
+	
+	page = requests.get( 'http://scottishhillracing.co.uk/Races.aspx' )
+	page = bs( page.content, 'html.parser' )
+
+	details = page.find(id="tabcontainer_body").find_all("a", {"id" : lambda l: l and l.startswith('dgRacesAll_a1_')})#.find_all('li')
+	print(len(details))
+	print(type(details))
+	details = page.find(id="tabcontainer_body").find_all("td", {"style" : "width:350px;"})#.find_all('li')
+	print(len(details))
+	print(type(details))
+scrapeSHRpage()
+sys.exit()
 
 def scrapePage( raceID ):
 	## Given page id, return race info as a dictionary
@@ -48,8 +103,13 @@ def scrapePage( raceID ):
 	try:
 		details  = page.find(id="main-content-left").find_all(class_="race_info_list")[0].find_all('li')
 		race['date']   = details[0].get_text()[12:].strip()
+		#print(race['date'].split())
+		race['month']  = race['date'].split()[2]
+		race['shortdate'] = formatDate( race['date'] )	
+		print(race['shortdate'])
 	except: 
 		race['date'] = ''
+		race['month'] = '' 
 
 	if tag in race['date']:
 		## Find race name
@@ -75,6 +135,16 @@ def scrapePage( raceID ):
 				if race['climb'] < 0: race['climb'] = 0
 			if 'Venue' in text:
 				race['venue'] = text[6:].replace(', ', ' ').replace(',',' ').replace('. ',' ').replace('.',' ').replace(' nr ',' ').replace(' Nr ',' ').replace(' near ',' ').replace('GR','').strip()
+
+
+				## Manual interventions:
+
+				if race['name'] == 'Slieve Donard': race['venue'] += ' Northern Ireland'
+				if race['name'] == 'Fellside': race['venue'] += ' Caldbeck'
+				if race['name'] == 'Stybarrow Dodd Kong Winter Series 4': race['venue'] += ' CA12 4TJ'
+				
+				## End of manual intervention
+
 				gr = race['venue'].split(' ')
 				gr = [ x for x in gr if (len(x) == 8 and x[2:].isdigit()) ]
 				if len(gr) == 1: 
@@ -135,18 +205,21 @@ def listRace( race ):
 		else:
 			race['gmap'] = race['venue']
 		print('Processing race: ' + race['name'])
-		with open( outDir + tag + '.csv', 'a' ) as f:
-			f.write("%s,%s,%s,%s,%s,%s,%s,%.1f,%d,%s,%s \n" % (race['date'], race['name'], race['dist'], race['ascent'], race['venue'], race['country'], race['region'], 
+		with open( outDir + tag + race['month'] +'.csv', 'a' ) as f:
+			f.write("%s,%s,%s,%s,%s,%s,%s,%.1f,%d,%s,%s \n" % (race['date'], race['shortdate'] + race['name'], race['dist'], race['ascent'], race['venue'], race['country'], race['region'], 
 										race['miles'], race['climb'], race['gmap'], race['web']) )
 
-def setDataFile():
+def setDataFile(month = ''):
 	## overwrite any existing file, insert appropriate header.
-	with open( outDir + tag + '.csv', 'w' ) as f:
-		f.write('Date, Race, Distance, Ascent, Venue, Country, Region, Distance (mil), Climb (m), Gmap, Web\n')
+	with open( outDir + tag + month + '.csv', 'w' ) as f:
+		if (month != 'Feb' and month != 'Dec'): 
+			f.write('Date, Race, Distance, Ascent, Venue, Country, Region, Distance (mil), Climb (m), Gmap, Web\n')
 		f.close()
 def main():
 	## Make relevant file and add header
-	setDataFile()
+	#setDataFile()
+	for mon in ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']:
+		setDataFile(month = mon)
 
 	## Do the dirty work: trawl the webpages for races in year
 	## defined by user parameter 'tag'. Save these to .csv file readable by google maps.
@@ -154,6 +227,12 @@ def main():
 	if tag == '2017':
 		firstInd = 4480
 		lastInd  = 5336
+		#firstInd = 4890
+		#lastInd  = 4900
+	if tag == '2018':
+		firstInd = 5337
+		lastInd  = 5996 
+		#lastInd  = 5390 
 	else:
 		print('Use index numbers in makeRaceList.py to efficiently trawl fellrunner.org.uk races, given the year of interest\nExiting...')
 		sys.exit()
@@ -161,5 +240,26 @@ def main():
 		race = scrapePage( str(i) )
 		listRace( race )
 
+	## Now sort the various files into date order
+	for month in ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']:
+		subprocess.call(['sort', '-k2', '-n', '-o', outDir + tag + month + '.csv', outDir + tag + month + '.csv' ])
+
+	## Concatenate Jan/Feb and Nov/Dec since google only allows 10 layers per map. 
+	with open(outDir + tag + 'JanFeb.csv', 'w') as outfile:
+    		subprocess.call(['cat', outDir + tag + 'Jan.csv', outDir + tag + 'Feb.csv'], stdout=outfile)
+	with open(outDir + tag + 'NovDec.csv', 'w') as outfile:
+    		subprocess.call(['cat', outDir + tag + 'Nov.csv', outDir + tag + 'Dec.csv'], stdout=outfile)
 
 main()
+
+
+
+"""
+## REDUNDANT - SEE ABOVE.
+## Note, use:
+cp 2018Oct.csv 2018OctNovDec.csv
+cat 2018Nov.csv 2018OctNovDec.csv
+cat 2018Dec.csv 2018OctNovDec.csv
+## to put the data files into one, since Google Maps limits to 10 layers.
+"""
+
