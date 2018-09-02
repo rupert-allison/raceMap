@@ -1,5 +1,6 @@
 ## Create a csv file containing race data scraped from fellrunner.org.uk
-## Usual usage woudl e.g. create YorkDales2017.csv, all races in the Dales in 2017.
+## REDUNDANT: Usual usage woudl e.g. create YorkDales2017.csv, all races in the Dales in 2017.
+## Version 1 of the race map had 871 views when released publically in July 2018. 
 
 ## Requirements: (np, matplotlib,) requests, Beautiful Soup.
 ## Module 'requests' was already installed on my machine/python version.
